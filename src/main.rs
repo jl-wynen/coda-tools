@@ -70,8 +70,8 @@ fn inspect_files_in_folder(folder: &Path, max_n: usize) {
         files.push(path);
     }
 
-    files.sort_by(|a, b| b.cmp(a));
-    inspect_list_of_files(&files[..max_n.min(files.len())]);
+    files.sort();
+    inspect_list_of_files(&files[max_n.min(files.len())..]);
 }
 
 fn main() {
