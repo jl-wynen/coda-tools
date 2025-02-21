@@ -71,7 +71,12 @@ fn inspect_files_in_folder(folder: &Path, max_n: usize) {
     }
 
     files.sort();
-    inspect_list_of_files(&files[max_n.min(files.len())..]);
+    let start = if max_n > files.len() {
+        0
+    } else {
+        files.len() - max_n
+    };
+    inspect_list_of_files(&files[start..]);
 }
 
 fn main() {
