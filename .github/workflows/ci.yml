@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Install Rust
         run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install-rustup.sh
+          sh ./install-rustup.sh -y
           rustup toolchain install $RUST_TOOLCHAIN_VERSION
           rustup default $RUST_TOOLCHAIN_VERSION
       - name: Checkout
