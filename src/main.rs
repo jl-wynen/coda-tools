@@ -50,7 +50,7 @@ fn inspect_list_of_files(paths: &[PathBuf]) {
     }
 }
 
-fn inspect_files_in_folder(folder: &Path) {
+fn inspect_files_in_folder(folder: &Path, max_n: usize) {
     let Ok(dir_iter) = folder.read_dir() else {
         eprintln!("Failed to read directory: {}", folder.display());
         return;
@@ -60,7 +60,7 @@ fn inspect_files_in_folder(folder: &Path) {
         let path = match maybe_entry {
             Ok(entry) => entry.path(),
             Err(err) => {
-                eprintln!("Failed to read entry: {}", err);
+                eprintln!("Failed to read directory entry: {}", err);
                 continue;
             }
         };
@@ -71,7 +71,7 @@ fn inspect_files_in_folder(folder: &Path) {
     }
 
     files.sort();
-    inspect_list_of_files(&files);
+    inspect_list_of_files(&files[..max_n.min(files.len())]);
 }
 
 fn main() {
@@ -80,10 +80,10 @@ fn main() {
     let input_paths: Vec<_> = args.paths.iter().map(PathBuf::from).collect();
 
     if input_paths.is_empty() {
-        inspect_files_in_folder(&std::env::current_dir().unwrap())
+        inspect_files_in_folder(&std::env::current_dir().unwrap(), args.n)
     } else if input_paths.len() > 1 || input_paths[0].is_file() {
         inspect_list_of_files(&input_paths);
     } else {
-        inspect_files_in_folder(input_paths[0].as_path())
+        inspect_files_in_folder(input_paths[0].as_path(), args.n)
     }
 }
