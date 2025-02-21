@@ -1,0 +1,16 @@
+[package]
+name = "coda-tools"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jan-Lukas Wynen"]
+license = "MIT"
+
+[dependencies]
+hdf5 = { package = "hdf5-metno", version = "0.10.0", features = ["static"] }
+
+[[bin]]
+name = "codai"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
