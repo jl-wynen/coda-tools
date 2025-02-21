@@ -55,6 +55,7 @@ fn inspect_files_in_folder(folder: &Path) {
         eprintln!("Failed to read directory: {}", folder.display());
         return;
     };
+    let mut files = Vec::new();
     for maybe_entry in dir_iter {
         let path = match maybe_entry {
             Ok(entry) => entry.path(),
@@ -66,8 +67,11 @@ fn inspect_files_in_folder(folder: &Path) {
         if !path.is_file() {
             continue;
         }
-        inspect_file(&path);
+        files.push(path);
     }
+
+    files.sort();
+    inspect_list_of_files(&files);
 }
 
 fn main() {
