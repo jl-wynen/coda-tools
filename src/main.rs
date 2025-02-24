@@ -1,3 +1,5 @@
+mod coda;
+
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -85,7 +87,15 @@ fn main() {
     let input_paths: Vec<_> = args.paths.iter().map(PathBuf::from).collect();
 
     if input_paths.is_empty() {
-        inspect_files_in_folder(&std::env::current_dir().unwrap(), args.n)
+        let proposal_number = match coda::find_proposal(None) {
+            Ok(proposal_number) => proposal_number,
+            Err(err) => {
+                eprintln!("Failed to find a CODA proposal directory: {err}.");
+                return;
+            }
+        };
+        let dir = coda::coda_raw_dir(proposal_number.as_str(), None);
+        inspect_files_in_folder(&dir, args.n)
     } else if input_paths.len() > 1 || input_paths[0].is_file() {
         inspect_list_of_files(&input_paths);
     } else {
