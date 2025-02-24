@@ -1,10 +1,10 @@
 mod coda;
 
-use std::path::{Path, PathBuf};
-
+use anyhow::{bail, Result};
 use clap::Parser;
 use colored::Colorize;
-use hdf5::{types::VarLenUnicode, Dataset, File, Group, Result};
+use hdf5::{types::VarLenUnicode, Dataset, File, Group};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -15,9 +15,17 @@ struct Args {
     /// Maximum number of files to inspect.
     #[arg(short, default_value_t = 10)]
     n: usize,
+
+    /// Proposal number to scan files for.
+    #[arg(long)]
+    proposal: Option<String>,
+
+    /// Year of the proposal to scan through, defaults to current.
+    #[arg(long)]
+    year: Option<i32>,
 }
 
-fn open_dataset_at_path(base: &Group, path: &[&str]) -> Result<Dataset> {
+fn open_dataset_at_path(base: &Group, path: &[&str]) -> hdf5::Result<Dataset> {
     if path.len() == 1 {
         base.dataset(path[0])
     } else {
@@ -26,12 +34,12 @@ fn open_dataset_at_path(base: &Group, path: &[&str]) -> Result<Dataset> {
     }
 }
 
-fn load_instrument_name(file: &File) -> Result<String> {
+fn load_instrument_name(file: &File) -> hdf5::Result<String> {
     let name_dataset = open_dataset_at_path(file, &["entry", "instrument", "name"])?;
     Ok(name_dataset.read_scalar::<VarLenUnicode>()?.into())
 }
 
-fn try_inspect_file(path: &Path) -> Result<()> {
+fn try_inspect_file(path: &Path) -> hdf5::Result<()> {
     let file = File::open(path)?;
     let name = load_instrument_name(&file)?;
     println!("  Instrument: {}", name.blue().bold());
@@ -81,22 +89,41 @@ fn inspect_files_in_folder(folder: &Path, max_n: usize) {
     inspect_list_of_files(&files[start..]);
 }
 
+fn default_input_paths(args: &Args) -> Result<Vec<PathBuf>> {
+    let proposal_number = match &args.proposal {
+        Some(proposal) => proposal.clone(),
+        None => match coda::find_proposal(args.year) {
+            Ok(proposal_number) => proposal_number,
+            Err(err) => {
+                eprintln!("Failed to find a CODA proposal directory: {err}.");
+                bail!(err);
+            }
+        },
+    };
+    Ok(vec![coda::coda_raw_dir(
+        proposal_number.as_str(),
+        args.year,
+    )])
+}
+
 fn main() {
     let args = Args::parse();
 
     let input_paths: Vec<_> = args.paths.iter().map(PathBuf::from).collect();
+    let input_paths = if input_paths.is_empty() {
+        if let Ok(paths) = default_input_paths(&args) {
+            paths
+        } else {
+            eprintln!(
+                "Unable to deduce paths to CODA data. Please provide a path or list of files."
+            );
+            return;
+        }
+    } else {
+        input_paths
+    };
 
-    if input_paths.is_empty() {
-        let proposal_number = match coda::find_proposal(None) {
-            Ok(proposal_number) => proposal_number,
-            Err(err) => {
-                eprintln!("Failed to find a CODA proposal directory: {err}.");
-                return;
-            }
-        };
-        let dir = coda::coda_raw_dir(proposal_number.as_str(), None);
-        inspect_files_in_folder(&dir, args.n)
-    } else if input_paths.len() > 1 || input_paths[0].is_file() {
+    if input_paths.len() > 1 || input_paths[0].is_file() {
         inspect_list_of_files(&input_paths);
     } else {
         inspect_files_in_folder(input_paths[0].as_path(), args.n)
