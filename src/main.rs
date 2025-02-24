@@ -1,16 +1,19 @@
 mod coda;
 
 use anyhow::{bail, Result};
-use clap::Parser;
+use clap::{Args, Parser};
 use colored::Colorize;
 use hdf5::{types::VarLenUnicode, Dataset, File, Group};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
-struct Args {
+struct Arguments {
     /// Concrete files or folder of files to inspect.
     paths: Vec<String>,
+
+    #[command(flatten)]
+    command: Command,
 
     /// Maximum number of files to inspect.
     #[arg(short, default_value_t = 10)]
@@ -23,6 +26,23 @@ struct Args {
     /// Year of the proposal to scan through, defaults to current.
     #[arg(long)]
     year: Option<i32>,
+}
+
+#[derive(Args, Debug)]
+#[group(required = false, multiple = false)]
+struct Command {
+    #[arg(long)]
+    list: bool,
+    #[arg(long)]
+    find: bool,
+}
+
+fn parse_arguments() -> Arguments {
+    let mut args = Arguments::parse();
+    if !args.command.list && !args.command.find {
+        args.command.list = true;
+    }
+    args
 }
 
 fn open_dataset_at_path(base: &Group, path: &[&str]) -> hdf5::Result<Dataset> {
@@ -89,7 +109,7 @@ fn inspect_files_in_folder(folder: &Path, max_n: usize) {
     inspect_list_of_files(&files[start..]);
 }
 
-fn default_input_paths(args: &Args) -> Result<Vec<PathBuf>> {
+fn default_input_paths(args: &Arguments) -> Result<Vec<PathBuf>> {
     let proposal_number = match &args.proposal {
         Some(proposal) => proposal.clone(),
         None => match coda::find_proposal(args.year) {
@@ -106,8 +126,18 @@ fn default_input_paths(args: &Args) -> Result<Vec<PathBuf>> {
     )])
 }
 
+fn list_coda_files(input_paths: &[PathBuf], args: &Arguments) {
+    if input_paths.len() > 1 || input_paths[0].is_file() {
+        inspect_list_of_files(input_paths);
+    } else {
+        inspect_files_in_folder(input_paths[0].as_path(), args.n)
+    }
+}
+
+fn find_coda_files(input_paths: &[PathBuf], args: &Arguments) {}
+
 fn main() {
-    let args = Args::parse();
+    let args = parse_arguments();
 
     let input_paths: Vec<_> = args.paths.iter().map(PathBuf::from).collect();
     let input_paths = if input_paths.is_empty() {
@@ -123,9 +153,9 @@ fn main() {
         input_paths
     };
 
-    if input_paths.len() > 1 || input_paths[0].is_file() {
-        inspect_list_of_files(&input_paths);
-    } else {
-        inspect_files_in_folder(input_paths[0].as_path(), args.n)
+    if args.command.list {
+        list_coda_files(&input_paths, &args);
+    } else if args.command.find {
+        find_coda_files(&input_paths, &args);
     }
 }
