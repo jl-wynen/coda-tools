@@ -1,7 +1,7 @@
 mod coda;
 
 use anyhow::{bail, Result};
-use clap::{Args, Parser};
+use clap::Parser;
 use colored::Colorize;
 use hdf5::{types::VarLenUnicode, Dataset, File, Group};
 use std::path::{Path, PathBuf};
@@ -9,15 +9,19 @@ use std::path::{Path, PathBuf};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct Arguments {
-    /// Concrete files or folder of files to inspect.
+    /// Files or folder of files to inspect.
     paths: Vec<String>,
 
-    #[command(flatten)]
-    command: Command,
+    #[arg(short, long)]
+    instrument: Option<String>,
 
-    /// Maximum number of files to inspect.
+    /// Maximum number of results to display.
     #[arg(short, default_value_t = 10)]
     n: usize,
+
+    /// Maximum number of files to inspect.
+    #[arg(long, default_value_t = 30)]
+    max: usize,
 
     /// Proposal number to scan files for.
     #[arg(long)]
@@ -26,23 +30,6 @@ struct Arguments {
     /// Year of the proposal to scan through, defaults to current.
     #[arg(long)]
     year: Option<i32>,
-}
-
-#[derive(Args, Debug)]
-#[group(required = false, multiple = false)]
-struct Command {
-    #[arg(long)]
-    list: bool,
-    #[arg(long)]
-    find: bool,
-}
-
-fn parse_arguments() -> Arguments {
-    let mut args = Arguments::parse();
-    if !args.command.list && !args.command.find {
-        args.command.list = true;
-    }
-    args
 }
 
 fn open_dataset_at_path(base: &Group, path: &[&str]) -> hdf5::Result<Dataset> {
@@ -59,31 +46,73 @@ fn load_instrument_name(file: &File) -> hdf5::Result<String> {
     Ok(name_dataset.read_scalar::<VarLenUnicode>()?.into())
 }
 
-fn try_inspect_file(path: &Path) -> hdf5::Result<()> {
+#[derive(Clone, Debug)]
+struct InspectResult {
+    instrument: String,
+}
+
+impl InspectResult {
+    fn report(&self) {
+        println!("  Instrument: {}", self.instrument.blue().bold());
+    }
+}
+
+fn matches_instrument(actual: &str, filter: &Option<String>) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    let actual = actual.to_lowercase();
+    let filter = filter.to_lowercase();
+
+    if filter == "tbl" && actual.contains("test beamline") {
+        true
+    } else {
+        actual == filter
+    }
+}
+
+fn try_inspect_file(path: &Path) -> hdf5::Result<InspectResult> {
     let file = File::open(path)?;
     let name = load_instrument_name(&file)?;
-    println!("  Instrument: {}", name.blue().bold());
-    Ok(())
+    Ok(InspectResult { instrument: name })
 }
 
-fn inspect_file(path: &Path) {
+fn inspect_file(path: &Path, instrument: &Option<String>) -> bool {
+    let result = try_inspect_file(path);
+    if let Ok(r) = &result {
+        if !matches_instrument(&r.instrument, instrument) {
+            return false;
+        }
+    }
+
     println!("{}:", path.to_str().unwrap().bold());
-    match try_inspect_file(&PathBuf::from(path)) {
-        Ok(()) => (),
-        Err(err) => eprintln!("  Failed: {}", err),
+    match result {
+        Ok(result) => {
+            result.report();
+        }
+        Err(err) => {
+            eprintln!("  Failed: {}", err);
+        }
     }
+    true
 }
 
-fn inspect_list_of_files(paths: &[PathBuf]) {
+fn inspect_list_of_files(paths: &[PathBuf], args: &Arguments) {
+    let mut n_inspected = 0;
     for path in paths {
-        inspect_file(path)
+        if inspect_file(path, &args.instrument) {
+            n_inspected += 1;
+            if n_inspected >= args.n {
+                break;
+            }
+        }
     }
 }
 
-fn inspect_files_in_folder(folder: &Path, max_n: usize) {
+fn get_files_in_folder(folder: &Path, max_n: usize) -> Vec<PathBuf> {
     let Ok(dir_iter) = folder.read_dir() else {
         eprintln!("Failed to read directory: {}", folder.display());
-        return;
+        return Vec::new();
     };
     let mut files = Vec::new();
     for maybe_entry in dir_iter {
@@ -106,7 +135,7 @@ fn inspect_files_in_folder(folder: &Path, max_n: usize) {
     } else {
         files.len() - max_n
     };
-    inspect_list_of_files(&files[start..]);
+    files[start..].to_vec()
 }
 
 fn default_input_paths(args: &Arguments) -> Result<Vec<PathBuf>> {
@@ -127,17 +156,16 @@ fn default_input_paths(args: &Arguments) -> Result<Vec<PathBuf>> {
 }
 
 fn list_coda_files(input_paths: &[PathBuf], args: &Arguments) {
-    if input_paths.len() > 1 || input_paths[0].is_file() {
-        inspect_list_of_files(input_paths);
+    let input_paths = if input_paths.len() > 1 || input_paths[0].is_file() {
+        input_paths.to_vec()
     } else {
-        inspect_files_in_folder(input_paths[0].as_path(), args.n)
-    }
+        get_files_in_folder(input_paths[0].as_path(), args.max)
+    };
+    inspect_list_of_files(&input_paths, args);
 }
 
-fn find_coda_files(input_paths: &[PathBuf], args: &Arguments) {}
-
 fn main() {
-    let args = parse_arguments();
+    let args = Arguments::parse();
 
     let input_paths: Vec<_> = args.paths.iter().map(PathBuf::from).collect();
     let input_paths = if input_paths.is_empty() {
@@ -153,9 +181,5 @@ fn main() {
         input_paths
     };
 
-    if args.command.list {
-        list_coda_files(&input_paths, &args);
-    } else if args.command.find {
-        find_coda_files(&input_paths, &args);
-    }
+    list_coda_files(&input_paths, &args);
 }
