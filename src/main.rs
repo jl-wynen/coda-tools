@@ -2,6 +2,7 @@ mod coda;
 mod nexus;
 
 use anyhow::{bail, Result};
+use bytesize::ByteSize;
 use chrono::SecondsFormat;
 use clap::Parser;
 use colored::Colorize;
@@ -62,6 +63,11 @@ fn format_maybe_time(time: Option<chrono::DateTime<chrono::Local>>) -> String {
         .unwrap_or_else(|| "?".to_string())
 }
 
+fn format_maybe_size(size: Option<u64>) -> String {
+    size.map(|s| ByteSize::b(s).display().iec().to_string())
+        .unwrap_or_else(|| "?".to_string())
+}
+
 fn report_on_file(results: &nexus::InspectResult, verbose: bool) {
     println!("  Instrument: {}", results.instrument.blue().bold());
     if verbose {
@@ -70,6 +76,7 @@ fn report_on_file(results: &nexus::InspectResult, verbose: bool) {
             "  Modified:   {}",
             format_maybe_time(results.modification_time)
         );
+        println!("  File size:  {}", format_maybe_size(results.file_size));
     }
 }
 
