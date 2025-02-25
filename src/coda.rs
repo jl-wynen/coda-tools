@@ -24,9 +24,9 @@ pub fn find_proposal(year: Option<i32>) -> Result<String> {
                 let Ok(metadata) = path.join("raw").metadata() else {
                     return (acc_path, acc_mtime);
                 };
-                let Ok(mtime) = metadata.modified() else {
-                    return (acc_path, acc_mtime);
-                };
+                let mtime = metadata
+                    .modified()
+                    .expect("File modification time not available");
                 if mtime > acc_mtime {
                     (path, mtime)
                 } else {

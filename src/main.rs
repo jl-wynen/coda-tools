@@ -1,13 +1,20 @@
 mod coda;
+mod nexus;
 
 use anyhow::{bail, Result};
+use chrono::SecondsFormat;
 use clap::Parser;
 use colored::Colorize;
-use hdf5::{types::VarLenUnicode, Dataset, File, Group};
 use std::path::{Path, PathBuf};
 
+/// Inspect NeXus files created by CODA.
+///
+/// By default, it will find the current CODA proposal and raw data folder
+/// by inspecting modification times of files.
+/// Specify a path to a directory to only search within that directory.
+/// Or specify a list of files to only inspect those files.
 #[derive(Parser, Debug)]
-#[command(version, about, long_about=None)]
+#[command(version, about, long_about)]
 struct Arguments {
     /// Files or folder of files to inspect.
     paths: Vec<String>,
@@ -30,31 +37,10 @@ struct Arguments {
     /// Year of the proposal to scan through, defaults to current.
     #[arg(long)]
     year: Option<i32>,
-}
 
-fn open_dataset_at_path(base: &Group, path: &[&str]) -> hdf5::Result<Dataset> {
-    if path.len() == 1 {
-        base.dataset(path[0])
-    } else {
-        base.group(path[0])
-            .and_then(|group| open_dataset_at_path(&group, &path[1..]))
-    }
-}
-
-fn load_instrument_name(file: &File) -> hdf5::Result<String> {
-    let name_dataset = open_dataset_at_path(file, &["entry", "instrument", "name"])?;
-    Ok(name_dataset.read_scalar::<VarLenUnicode>()?.into())
-}
-
-#[derive(Clone, Debug)]
-struct InspectResult {
-    instrument: String,
-}
-
-impl InspectResult {
-    fn report(&self) {
-        println!("  Instrument: {}", self.instrument.blue().bold());
-    }
+    /// Enable extra output.
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn matches_instrument(actual: &str, filter: &Option<String>) -> bool {
@@ -71,14 +57,24 @@ fn matches_instrument(actual: &str, filter: &Option<String>) -> bool {
     }
 }
 
-fn try_inspect_file(path: &Path) -> hdf5::Result<InspectResult> {
-    let file = File::open(path)?;
-    let name = load_instrument_name(&file)?;
-    Ok(InspectResult { instrument: name })
+fn format_maybe_time(time: Option<chrono::DateTime<chrono::Local>>) -> String {
+    time.map(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "?".to_string())
 }
 
-fn inspect_file(path: &Path, instrument: &Option<String>) -> bool {
-    let result = try_inspect_file(path);
+fn report_on_file(results: &nexus::InspectResult, verbose: bool) {
+    println!("  Instrument: {}", results.instrument.blue().bold());
+    if verbose {
+        println!("  Start time: {}", format_maybe_time(results.start_time));
+        println!(
+            "  Modified:   {}",
+            format_maybe_time(results.modification_time)
+        );
+    }
+}
+
+fn inspect_file(path: &Path, instrument: &Option<String>, verbose: bool) -> bool {
+    let result = nexus::try_inspect_file(path);
     if let Ok(r) = &result {
         if !matches_instrument(&r.instrument, instrument) {
             return false;
@@ -88,7 +84,7 @@ fn inspect_file(path: &Path, instrument: &Option<String>) -> bool {
     println!("{}:", path.to_str().unwrap().bold());
     match result {
         Ok(result) => {
-            result.report();
+            report_on_file(&result, verbose);
         }
         Err(err) => {
             eprintln!("  Failed: {}", err);
@@ -100,7 +96,7 @@ fn inspect_file(path: &Path, instrument: &Option<String>) -> bool {
 fn inspect_list_of_files(paths: &[PathBuf], args: &Arguments) {
     let mut n_inspected = 0;
     for path in paths {
-        if inspect_file(path, &args.instrument) {
+        if inspect_file(path, &args.instrument, args.verbose) {
             n_inspected += 1;
             if n_inspected >= args.n {
                 break;
