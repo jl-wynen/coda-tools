@@ -132,13 +132,8 @@ fn get_files_in_folder(folder: &Path, max_n: usize) -> Vec<PathBuf> {
         files.push(path);
     }
 
-    files.sort();
-    let start = if max_n > files.len() {
-        0
-    } else {
-        files.len() - max_n
-    };
-    files[start..].to_vec()
+    files.sort_by(|a, b| b.cmp(a));
+    files[..max_n.min(files.len())].to_vec()
 }
 
 fn default_input_paths(args: &Arguments) -> Result<Vec<PathBuf>> {
