@@ -112,6 +112,13 @@ fn inspect_list_of_files(paths: &[PathBuf], args: &Arguments) {
     }
 }
 
+fn is_coda_hdf_file(path: &Path) -> bool {
+    match path.extension() {
+        Some(ext) => ext == "hdf",
+        None => false,
+    }
+}
+
 fn get_files_in_folder(folder: &Path, max_n: usize) -> Vec<PathBuf> {
     let Ok(dir_iter) = folder.read_dir() else {
         eprintln!("Failed to read directory: {}", folder.display());
@@ -126,7 +133,14 @@ fn get_files_in_folder(folder: &Path, max_n: usize) -> Vec<PathBuf> {
                 continue;
             }
         };
+        if !is_coda_hdf_file(&path) {
+            continue;
+        }
         if !path.is_file() {
+            eprintln!(
+                "Skipping {} because it is not a regular file.",
+                path.display()
+            );
             continue;
         }
         files.push(path);
